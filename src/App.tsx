@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { questions, categories } from './data/questions';
-import { Player, SavedPlayer, DEFAULT_PLAYERS, ACHIEVEMENTS, GameState } from './types/game';
+import { Player, LeaderboardEntry, ACHIEVEMENTS, GameState } from './types/game';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useSound } from './hooks/useSound';
 import { useConfetti } from './hooks/useConfetti';
@@ -15,6 +15,13 @@ import { PlayerSelect } from './components/PlayerSelect';
 const DEFAULT_TIME = 20;
 const BLITZ_TIME = 90;
 const QUESTIONS_PER_ROUND = 20;
+
+// Joueurs prédéfinis
+const PLAYERS = [
+  { name: 'Micka', avatar: '🧠' },
+  { name: 'Pres', avatar: '🦊' },
+  { name: 'Bryan', avatar: '🐲' },
+];
 
 function shuffleArray<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -38,17 +45,8 @@ function createPlayer(name: string, avatar: string): Player {
 }
 
 export default function App() {
-  const [savedPlayers, setSavedPlayers] = useLocalStorage<SavedPlayer[]>('quiz_saved_players', DEFAULT_PLAYERS);
-  const [selectedPlayerId, setSelectedPlayerId] = useLocalStorage<string>('quiz_selected_player', '');
-
-  // Agrégation de tous les succès de tous les joueurs
-  const allAchievements = savedPlayers.flatMap(p => p.achievements);
-
-  // Le joueur actuellement sélectionné
-  const selectedSavedPlayer = savedPlayers.find(p => p.id === selectedPlayerId) || null;
-
-  // Le mode d'affichage initial (sélection joueur ou menu)
-  const [showMenu, setShowMenu] = useState<boolean>(!!selectedSavedPlayer);
+  const [leaderboard, setLeaderboard] = useLocalStorage<LeaderboardEntry[]>('quiz_leaderboard', []);
+  const [allAchievements, setAllAchievements] = useLocalStorage<string[]>('quiz_achievements', []);
 
   const [gameState, setGameState] = useState<GameState>({
     mode: 'menu',
@@ -71,6 +69,7 @@ export default function App() {
     blitzTimeTotal: BLITZ_TIME,
   });
 
+  const [selectedPlayerIdx, setSelectedPlayerIdx] = useState(0);
   const [hiddenOptions, setHiddenOptions] = useState<number[]>([]);
   const [newAchievements, setNewAchievements] = useState<string[]>([]);
   const [showSetup, setShowSetup] = useState(false);
@@ -85,6 +84,24 @@ export default function App() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { playCorrect, playWrong, playClick, playTick, playStreak, playLevelUp, playGameOver } = useSound();
   const { fire, fireStars } = useConfetti();
+
+  // Nettoie les doublons du leaderboard au chargement (garde le meilleur score par joueur+mode)
+  useEffect(() => {
+    setLeaderboard(prev => {
+      const deduped = new Map<string, LeaderboardEntry>();
+      for (const e of prev) {
+        const key = `${e.name}__${e.mode}`;
+        const existing = deduped.get(key);
+        if (!existing || e.score > existing.score) {
+          deduped.set(key, e);
+        }
+      }
+      const result = Array.from(deduped.values()).sort((a, b) => b.score - a.score);
+      // Vérifie si on a vraiment fait un changement
+      if (result.length === prev.length && result.every((r, i) => r === prev[i])) return prev;
+      return result;
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Timer logic
   useEffect(() => {
@@ -135,8 +152,8 @@ export default function App() {
     const total = mode === 'survie' ? filtered.length : Math.min(count, filtered.length);
     const questionIds = filtered.slice(0, total).map(q => q.id);
 
-    if (!selectedSavedPlayer) return;
-    const player = createPlayer(selectedSavedPlayer.name, selectedSavedPlayer.avatar);
+    const p = PLAYERS[selectedPlayerIdx];
+    const player = createPlayer(p.name, p.avatar);
 
     setHiddenOptions([]);
     setNewAchievements([]);
@@ -163,7 +180,7 @@ export default function App() {
     });
     setShowSetup(false);
     playClick();
-  }, [selectedSavedPlayer, playClick]);
+  }, [selectedPlayerIdx, playClick]);
 
   const handleAnswer = useCallback((index: number) => {
     if (gameState.showAnswer) return;
@@ -251,59 +268,55 @@ export default function App() {
     setGameState(prev => ({ ...prev, mode: 'results' as any, isTimerActive: false }));
   }, []);
 
-  // Check achievements and save best score when reaching results
+  // Check achievements when reaching results
   useEffect(() => {
-    if (gameState.mode === 'results' && selectedPlayerId) {
+    if (gameState.mode === 'results') {
       const p = gameState.currentPlayer;
-      const accuracy = p.totalAnswered > 0 ? Math.round((p.totalCorrect / p.totalAnswered) * 100) : 0;
+      const gained: string[] = [];
 
-      // Check new achievements for this player
-      setSavedPlayers(prev => prev.map(sp => {
-        if (sp.id !== selectedPlayerId) return sp;
+      if (!allAchievements.includes('first_game')) gained.push('first_game');
+      if (p.maxStreak >= 10 && !allAchievements.includes('perfect_10')) gained.push('perfect_10');
+      if (p.maxStreak >= 20 && !allAchievements.includes('perfect_20')) gained.push('perfect_20');
+      if (p.score >= 1000 && !allAchievements.includes('score_1000')) gained.push('score_1000');
+      if (p.score >= 5000 && !allAchievements.includes('score_5000')) gained.push('score_5000');
 
-        const newAchievements: string[] = [];
-        if (!sp.achievements.includes('first_game')) newAchievements.push('first_game');
-        if (p.maxStreak >= 10 && !sp.achievements.includes('perfect_10')) newAchievements.push('perfect_10');
-        if (p.maxStreak >= 20 && !sp.achievements.includes('perfect_20')) newAchievements.push('perfect_20');
-        if (p.score >= 1000 && !sp.achievements.includes('score_1000')) newAchievements.push('score_1000');
-        if (p.score >= 5000 && !sp.achievements.includes('score_5000')) newAchievements.push('score_5000');
-
-        // Si c'est le nouveau meilleur score, on met à jour
-        const isNewBest = p.score > sp.bestScore;
-
-        return {
-          ...sp,
-          bestScore: isNewBest ? p.score : sp.bestScore,
-          bestMode: isNewBest ? lastGameMode : sp.bestMode,
-          bestAccuracy: isNewBest ? accuracy : Math.max(sp.bestAccuracy, accuracy),
-          bestStreak: Math.max(sp.bestStreak, p.maxStreak),
-          totalGames: sp.totalGames + 1,
-          totalCorrect: sp.totalCorrect + p.totalCorrect,
-          totalAnswered: sp.totalAnswered + p.totalAnswered,
-          achievements: [...sp.achievements, ...newAchievements],
-          lastPlayed: Date.now(),
-        };
-      }));
-
-      // Affiche les nouveaux succès
-      const sp = savedPlayers.find(s => s.id === selectedPlayerId);
-      if (sp) {
-        const gained = ['first_game', 'perfect_10', 'perfect_20', 'score_1000', 'score_5000']
-          .filter(id => !sp.achievements.includes(id) &&
-            (id === 'first_game' ||
-             (id === 'perfect_10' && p.maxStreak >= 10) ||
-             (id === 'perfect_20' && p.maxStreak >= 20) ||
-             (id === 'score_1000' && p.score >= 1000) ||
-             (id === 'score_5000' && p.score >= 5000))
-          );
+      if (gained.length > 0) {
         setNewAchievements(gained);
-      }
-
-      if (p.score > (selectedSavedPlayer?.bestScore || 0)) {
+        setAllAchievements(prev => [...prev, ...gained]);
         playLevelUp();
       } else {
         playGameOver();
       }
+
+      // Save to leaderboard - garde uniquement le MEILLEUR score par joueur+mode
+      const modeStr = lastGameMode;
+      const entry: LeaderboardEntry = {
+        name: p.name,
+        avatar: p.avatar,
+        score: p.score,
+        totalCorrect: p.totalCorrect,
+        totalAnswered: p.totalAnswered,
+        streak: p.maxStreak,
+        date: new Date().toISOString(),
+        mode: modeStr,
+      };
+      setLeaderboard(prev => {
+        // Cherche si ce joueur a déjà un score dans ce mode
+        const existingIdx = prev.findIndex(e => e.name === entry.name && e.mode === entry.mode);
+        let newList;
+        if (existingIdx >= 0) {
+          // Remplace seulement si le nouveau score est MEILLEUR
+          if (entry.score > prev[existingIdx].score) {
+            newList = [...prev];
+            newList[existingIdx] = entry;
+          } else {
+            newList = prev; // Garde l'ancien meilleur score
+          }
+        } else {
+          newList = [...prev, entry]; // Premier score pour ce joueur/mode
+        }
+        return newList.sort((a, b) => b.score - a.score);
+      });
     }
   }, [gameState.mode]);
 
@@ -370,14 +383,6 @@ export default function App() {
     setGameState(prev => ({ ...prev, mode: 'menu', isTimerActive: false }));
     setShowSetup(false);
     setShowAchievements(false);
-    setShowMenu(true);
-  }, []);
-
-  const goToPlayerSelect = useCallback(() => {
-    setGameState(prev => ({ ...prev, mode: 'menu', isTimerActive: false }));
-    setShowSetup(false);
-    setShowAchievements(false);
-    setShowMenu(false);
   }, []);
 
   // Current question data
@@ -389,18 +394,11 @@ export default function App() {
   // Playing mode
   if ((gameState.mode === 'playing' || gameState.mode === 'survival' || gameState.mode === 'blitz') && currentQ) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/50 to-gray-900 relative overflow-hidden">
-        {/* Background effects */}
-        <div className="fixed inset-0 pointer-events-none">
-          <div className="absolute top-20 left-10 w-72 h-72 bg-purple-500/10 rounded-full blur-3xl animate-pulse" />
-          <div className="absolute bottom-20 right-10 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-pink-500/5 rounded-full blur-3xl" />
-        </div>
-
+      <div className="min-h-screen bg-main relative overflow-hidden">
         {/* Score popup */}
         {scorePopup && (
           <div className="fixed z-50 pointer-events-none animate-float-up" style={{ left: `${scorePopup.x}%`, top: `${scorePopup.y}%`, transform: 'translate(-50%, -50%)' }}>
-            <span className="text-3xl font-black text-yellow-400 drop-shadow-lg">+{scorePopup.points}</span>
+            <span className="font-score text-3xl font-bold text-amber-400 drop-shadow-lg">+{scorePopup.points}</span>
           </div>
         )}
 
@@ -459,7 +457,7 @@ export default function App() {
   // Results
   if (gameState.mode === 'results') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/50 to-gray-900">
+      <div className="min-h-screen bg-main relative">
         <ResultsScreen
           player={gameState.currentPlayer}
           mode={lastGameMode}
@@ -481,16 +479,11 @@ export default function App() {
   // Leaderboard
   if (gameState.mode === 'leaderboard') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/50 to-gray-900">
+      <div className="min-h-screen bg-main relative">
         <Leaderboard
-          players={savedPlayers}
+          entries={leaderboard}
           onBack={goToMenu}
-          onReset={() => {
-            if (confirm('Réinitialiser tous les scores et succès des 3 joueurs ?')) {
-              setSavedPlayers(DEFAULT_PLAYERS);
-              playClick();
-            }
-          }}
+          onClear={() => { setLeaderboard([]); playClick(); }}
         />
       </div>
     );
@@ -499,29 +492,27 @@ export default function App() {
   // Achievements screen
   if (showAchievements) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/50 to-gray-900 p-4 md:p-8">
+      <div className="min-h-screen bg-main p-4 md:p-8">
         <div className="max-w-2xl mx-auto">
-          <div className="flex items-center justify-between mb-8">
-            <button onClick={() => setShowAchievements(false)} className="p-3 rounded-2xl bg-white/10 hover:bg-white/20 transition-all text-white">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-            </button>
-            <h1 className="text-3xl font-bold text-white">🏅 Succès</h1>
-            <div className="text-white/40 text-sm">{allAchievements.length}/{ACHIEVEMENTS.length}</div>
+          <div className="flex items-center justify-between mb-6">
+            <button onClick={() => setShowAchievements(false)} className="btn-secondary !py-2 !px-3 rounded-lg text-xs">◄ Retour</button>
+            <h1 className="font-title text-2xl text-white flex items-center gap-2">🏅 Succès</h1>
+            <div className="text-white/40 text-sm font-bold">{allAchievements.length}/{ACHIEVEMENTS.length}</div>
           </div>
 
-          <div className="grid gap-3">
+          <div className="grid gap-2">
             {ACHIEVEMENTS.map(ach => {
               const unlocked = allAchievements.includes(ach.id);
               return (
-                <div key={ach.id} className={`flex items-center gap-4 p-4 rounded-2xl border transition-all ${
-                  unlocked ? 'bg-gradient-to-r from-yellow-500/10 to-amber-500/10 border-yellow-500/30' : 'bg-white/5 border-white/10 opacity-50'
+                <div key={ach.id} className={`flex items-center gap-4 p-4 rounded-xl transition-all ${
+                  unlocked ? 'glow-panel !border-amber-500/30' : 'glass-panel opacity-50'
                 }`}>
                   <span className="text-3xl">{unlocked ? ach.icon : '🔒'}</span>
                   <div className="flex-1">
-                    <div className="text-white font-bold">{ach.name}</div>
-                    <div className="text-white/50 text-sm">{ach.desc}</div>
+                    <div className={`font-bold ${unlocked ? 'text-amber-400' : 'text-white/50'}`}>{ach.name}</div>
+                    <div className="text-white/40 text-sm">{ach.desc}</div>
                   </div>
-                  {unlocked && <span className="text-emerald-400 text-xl">✓</span>}
+                  {unlocked && <span className="text-green-400 text-xl">✓</span>}
                 </div>
               );
             })}
@@ -539,58 +530,41 @@ export default function App() {
     }).length;
 
     return (
-      <div className="bg-gray-900/95 rounded-3xl p-6 border border-white/10 shadow-2xl max-h-[90vh] overflow-y-auto">
-        <h2 className="text-2xl font-bold text-white mb-6 text-center">⚙️ Configuration</h2>
-
-        {/* Current player info */}
-        {selectedSavedPlayer && (
-          <div className={`mb-6 p-4 rounded-2xl bg-gradient-to-r ${selectedSavedPlayer.color} bg-opacity-20 border border-white/20 flex items-center gap-3`}>
-            <div className="text-4xl">{selectedSavedPlayer.avatar}</div>
-            <div className="flex-1">
-              <div className="text-white font-bold text-lg">{selectedSavedPlayer.name}</div>
-              <div className="text-white/60 text-xs">Meilleur score : {selectedSavedPlayer.bestScore.toLocaleString()} pts</div>
-            </div>
-            <button
-              onClick={() => { setShowSetup(false); goToPlayerSelect(); }}
-              className="text-xs px-3 py-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-all"
-            >
-              Changer
-            </button>
-          </div>
-        )}
+      <div className="glow-panel rounded-2xl p-6 max-h-[90vh] overflow-y-auto">
+        <h2 className="font-title text-2xl text-white text-center mb-6">⚙️ Configuration</h2>
 
         {/* Mode */}
-        <div className="mb-6">
-          <label className="text-white/60 text-sm mb-2 block">Mode de jeu</label>
+        <div className="mb-5">
+          <label className="text-white/50 text-sm font-semibold mb-2 block">Mode de jeu</label>
           <div className="grid grid-cols-3 gap-2">
             {[
-              { id: 'classique' as const, icon: '📝', name: 'Classique', desc: 'Quiz standard' },
-              { id: 'survie' as const, icon: '💀', name: 'Survie', desc: '3 vies max' },
-              { id: 'blitz' as const, icon: '⚡', name: 'Blitz', desc: '90s chrono' },
+              { id: 'classique' as const, icon: '🎯', name: 'Classique', desc: 'Standard' },
+              { id: 'survie' as const, icon: '💀', name: 'Survie', desc: '3 vies' },
+              { id: 'blitz' as const, icon: '⚡', name: 'Blitz', desc: '90 sec' },
             ].map(m => (
               <button
                 key={m.id}
                 onClick={() => setSetupMode(m.id)}
-                className={`p-3 rounded-xl text-center transition-all ${
-                  setupMode === m.id ? 'bg-purple-500/30 border-2 border-purple-400' : 'bg-white/5 border border-white/10 hover:bg-white/10'
+                className={`p-3 rounded-xl text-center transition-all border-2 ${
+                  setupMode === m.id ? 'border-pink-500 bg-pink-500/10' : 'border-white/10 bg-white/5 hover:bg-white/10'
                 }`}
               >
                 <div className="text-2xl mb-1">{m.icon}</div>
                 <div className="text-white text-sm font-bold">{m.name}</div>
-                <div className="text-white/40 text-[10px]">{m.desc}</div>
+                <div className="text-white/40 text-[11px]">{m.desc}</div>
               </button>
             ))}
           </div>
         </div>
 
         {/* Category */}
-        <div className="mb-6">
-          <label className="text-white/60 text-sm mb-2 block">Catégorie</label>
+        <div className="mb-5">
+          <label className="text-white/50 text-sm font-semibold mb-2 block">Catégorie</label>
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => setSelectedSetupCategory(null)}
-              className={`p-2.5 rounded-xl text-sm font-medium transition-all ${
-                !selectedSetupCategory ? 'bg-purple-500/30 border-2 border-purple-400 text-white' : 'bg-white/5 border border-white/10 text-white/60 hover:bg-white/10'
+              className={`p-2.5 rounded-lg text-sm font-semibold transition-all ${
+                !selectedSetupCategory ? 'bg-pink-500/20 text-pink-400 border border-pink-500/40' : 'glass-panel text-white/60'
               }`}
             >
               🌐 Toutes
@@ -599,8 +573,8 @@ export default function App() {
               <button
                 key={cat.id}
                 onClick={() => setSelectedSetupCategory(cat.id)}
-                className={`p-2.5 rounded-xl text-sm font-medium transition-all text-left ${
-                  selectedSetupCategory === cat.id ? 'bg-purple-500/30 border-2 border-purple-400 text-white' : 'bg-white/5 border border-white/10 text-white/60 hover:bg-white/10'
+                className={`p-2.5 rounded-lg text-sm font-semibold transition-all text-left ${
+                  selectedSetupCategory === cat.id ? 'bg-pink-500/20 text-pink-400 border border-pink-500/40' : 'glass-panel text-white/60'
                 }`}
               >
                 {cat.icon} {cat.name.split(' ').slice(1).join(' ')}
@@ -610,59 +584,61 @@ export default function App() {
         </div>
 
         {/* Difficulty */}
-        <div className="mb-6">
-          <label className="text-white/60 text-sm mb-2 block">Difficulté</label>
+        <div className="mb-5">
+          <label className="text-white/50 text-sm font-semibold mb-2 block">Difficulté</label>
           <div className="grid grid-cols-4 gap-2">
             {[
-              { id: 'all' as const, label: '🌐 Toutes' },
-              { id: 'easy' as const, label: '🟢 Facile' },
-              { id: 'medium' as const, label: '🟡 Moyen' },
-              { id: 'hard' as const, label: '🔴 Difficile' },
+              { id: 'all' as const, label: 'Toutes', emoji: '🌐' },
+              { id: 'easy' as const, label: 'Facile', emoji: '🟢' },
+              { id: 'medium' as const, label: 'Moyen', emoji: '🟡' },
+              { id: 'hard' as const, label: 'Dur', emoji: '🔴' },
             ].map(d => (
               <button
                 key={d.id}
                 onClick={() => setSelectedSetupDifficulty(d.id)}
-                className={`p-2 rounded-xl text-xs font-medium transition-all ${
-                  selectedSetupDifficulty === d.id ? 'bg-purple-500/30 border-2 border-purple-400 text-white' : 'bg-white/5 border border-white/10 text-white/60 hover:bg-white/10'
+                className={`p-2 rounded-lg text-center transition-all ${
+                  selectedSetupDifficulty === d.id ? 'bg-pink-500/20 text-pink-400 border border-pink-500/40' : 'glass-panel text-white/60'
                 }`}
               >
-                {d.label}
+                <div className="text-base">{d.emoji}</div>
+                <div className="text-[11px] font-semibold">{d.label}</div>
               </button>
             ))}
           </div>
         </div>
 
-        {/* Question count (for classic mode) */}
+        {/* Question count */}
         {setupMode === 'classique' && (
-          <div className="mb-6">
-            <label className="text-white/60 text-sm mb-2 block">Nombre de questions: {questionsCount}</label>
+          <div className="mb-5">
+            <label className="text-white/50 text-sm font-semibold mb-2 block">
+              Questions : <span className="text-pink-400">{questionsCount}</span>
+            </label>
             <input
               type="range"
               min={5}
               max={Math.min(50, availableCount)}
               value={questionsCount}
               onChange={e => setQuestionsCount(Number(e.target.value))}
-              className="w-full accent-purple-500"
+              className="w-full"
             />
-            <div className="flex justify-between text-xs text-white/30">
+            <div className="flex justify-between text-xs text-white/30 mt-1">
               <span>5</span>
               <span>{availableCount} disponibles</span>
             </div>
           </div>
         )}
 
-        {/* Start button */}
         <button
           onClick={() => startGame(setupMode, selectedSetupCategory, selectedSetupDifficulty, questionsCount)}
           disabled={availableCount === 0}
-          className="w-full py-4 rounded-2xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold text-lg hover:shadow-lg hover:shadow-purple-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="btn-primary w-full py-4 rounded-xl text-base disabled:opacity-40"
         >
-          🚀 Lancer la partie ({availableCount} questions dispo)
+          🚀 Lancer ({availableCount} questions)
         </button>
 
         <button
           onClick={() => setShowSetup(false)}
-          className="w-full py-3 mt-3 rounded-2xl bg-white/5 border border-white/10 text-white/60 font-medium hover:bg-white/10 transition-all"
+          className="btn-secondary w-full mt-3 py-3 rounded-xl text-sm"
         >
           Annuler
         </button>
@@ -670,161 +646,14 @@ export default function App() {
     );
   }
 
-  // ============ PLAYER SELECTION ============
-  if (!showMenu) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/50 to-gray-900">
-        <PlayerSelect
-          players={savedPlayers}
-          onSelect={(player) => {
-            setSelectedPlayerId(player.id);
-            setShowMenu(true);
-            playClick();
-          }}
-        />
-      </div>
-    );
-  }
-
-  // ============ MENU ============
+  // ============ MAIN SCREEN : PLAYER SELECT ============
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/50 to-gray-900 relative overflow-hidden">
-      {/* Background effects */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-20 left-10 w-72 h-72 bg-purple-500/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute bottom-20 right-10 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
-        <div className="absolute top-40 right-20 w-64 h-64 bg-pink-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
-      </div>
-
-      <div className="relative z-10 min-h-screen flex flex-col items-center justify-center p-4 md:p-8">
-        {/* Logo */}
-        <div className="text-center mb-10">
-          <div className="text-6xl md:text-7xl mb-4 animate-bounce" style={{ animationDuration: '3s' }}>🧠</div>
-          <h1 className="text-5xl md:text-6xl font-black bg-gradient-to-r from-purple-400 via-pink-400 to-amber-400 bg-clip-text text-transparent mb-3">
-            QuizMaster
-          </h1>
-          <p className="text-white/40 text-lg">500 questions • 10 catégories • 3 modes de jeu</p>
-        </div>
-
-        {/* Current player indicator */}
-        {selectedSavedPlayer && (
-          <button
-            onClick={() => setShowMenu(false)}
-            className={`mb-8 flex items-center gap-3 px-5 py-3 rounded-2xl bg-gradient-to-r ${selectedSavedPlayer.color} bg-opacity-20 border border-white/20 hover:scale-105 transition-all active:scale-95`}
-          >
-            <div className="text-3xl">{selectedSavedPlayer.avatar}</div>
-            <div className="text-left">
-              <div className="text-white font-bold">{selectedSavedPlayer.name}</div>
-              <div className="text-white/60 text-xs">⭐ {selectedSavedPlayer.bestScore.toLocaleString()} pts</div>
-            </div>
-            <svg className="w-4 h-4 text-white/40 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
-            </svg>
-          </button>
-        )}
-
-        {/* Quick stats */}
-        <div className="flex gap-4 mb-10">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-white">500</div>
-            <div className="text-xs text-white/40">Questions</div>
-          </div>
-          <div className="w-px bg-white/10" />
-          <div className="text-center">
-            <div className="text-2xl font-bold text-white">10</div>
-            <div className="text-xs text-white/40">Catégories</div>
-          </div>
-          <div className="w-px bg-white/10" />
-          <div className="text-center">
-            <div className="text-2xl font-bold text-white">{savedPlayers.reduce((sum, p) => sum + p.totalGames, 0)}</div>
-            <div className="text-xs text-white/40">Parties</div>
-          </div>
-        </div>
-
-        {/* Main buttons */}
-        <div className="w-full max-w-md space-y-3 mb-8">
-          <button
-            onClick={() => { setShowSetup(true); playClick(); }}
-            className="w-full py-5 rounded-2xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold text-xl hover:shadow-xl hover:shadow-purple-500/30 hover:scale-[1.02] transition-all active:scale-95 flex items-center justify-center gap-3"
-          >
-            <span className="text-2xl">🎮</span> Nouvelle Partie
-          </button>
-
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={() => { setGameState(prev => ({ ...prev, mode: 'leaderboard' })); playClick(); }}
-              className="py-4 rounded-2xl bg-white/5 border border-white/10 text-white font-medium hover:bg-white/10 hover:scale-[1.02] transition-all active:scale-95 flex items-center justify-center gap-2"
-            >
-              <span className="text-xl">🏆</span> Classement
-            </button>
-            <button
-              onClick={() => { setShowAchievements(true); playClick(); }}
-              className="py-4 rounded-2xl bg-white/5 border border-white/10 text-white font-medium hover:bg-white/10 hover:scale-[1.02] transition-all active:scale-95 flex items-center justify-center gap-2"
-            >
-              <span className="text-xl">🏅</span> Succès
-            </button>
-          </div>
-        </div>
-
-        {/* Category Preview */}
-        <div className="w-full max-w-2xl">
-          <h3 className="text-white/40 text-sm font-medium mb-3 text-center">📂 Catégories disponibles</h3>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-            {categories.map(cat => {
-              const count = questions.filter(q => q.category === cat.id).length;
-              return (
-                <div
-                  key={cat.id}
-                  className="p-3 rounded-xl bg-white/5 border border-white/10 text-center hover:bg-white/10 transition-all cursor-default group"
-                >
-                  <div className="text-2xl mb-1 group-hover:scale-110 transition-transform">{cat.icon}</div>
-                  <div className="text-white text-xs font-medium">{cat.name.split(' ').slice(1).join(' ')}</div>
-                  <div className="text-white/30 text-[10px]">{count} Q</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Game modes preview */}
-        <div className="w-full max-w-2xl mt-8">
-          <h3 className="text-white/40 text-sm font-medium mb-3 text-center">🎯 Modes de jeu</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border border-blue-500/20">
-              <div className="text-2xl mb-2">📝</div>
-              <h4 className="text-white font-bold mb-1">Classique</h4>
-              <p className="text-white/40 text-xs">Choisissez le nombre de questions, la catégorie et la difficulté. Prenez votre temps !</p>
-            </div>
-            <div className="p-4 rounded-xl bg-gradient-to-br from-red-500/10 to-orange-500/10 border border-red-500/20">
-              <div className="text-2xl mb-2">💀</div>
-              <h4 className="text-white font-bold mb-1">Survie</h4>
-              <p className="text-white/40 text-xs">3 vies seulement ! Chaque erreur vous rapproche de la fin. Combien de questions survivrez-vous ?</p>
-            </div>
-            <div className="p-4 rounded-xl bg-gradient-to-br from-yellow-500/10 to-amber-500/10 border border-yellow-500/20">
-              <div className="text-2xl mb-2">⚡</div>
-              <h4 className="text-white font-bold mb-1">Blitz</h4>
-              <p className="text-white/40 text-xs">90 secondes pour répondre à un maximum de questions ! Vitesse et précision !</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Features highlight */}
-        <div className="w-full max-w-2xl mt-8 mb-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            {[
-              { icon: '🔥', label: 'Combos & Séries' },
-              { icon: '✂️', label: '50/50 & Jokers' },
-              { icon: '❄️', label: 'Gel du Temps' },
-              { icon: '🎵', label: 'Effets Sonores' },
-            ].map((f, i) => (
-              <div key={i} className="flex items-center gap-2 p-2.5 rounded-xl bg-white/5 border border-white/5">
-                <span className="text-lg">{f.icon}</span>
-                <span className="text-white/50 text-xs">{f.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+    <>
+      <PlayerSelect
+        onSelect={(idx) => { setSelectedPlayerIdx(idx); setShowSetup(true); playClick(); }}
+        onLeaderboard={() => { setGameState(prev => ({ ...prev, mode: 'leaderboard' })); playClick(); }}
+        onAchievements={() => { setShowAchievements(true); playClick(); }}
+      />
 
       {/* Setup Modal */}
       {showSetup && (
@@ -834,6 +663,6 @@ export default function App() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

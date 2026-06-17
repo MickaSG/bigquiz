@@ -22,24 +22,25 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
 
   const optionLabels = ['A', 'B', 'C', 'D'];
   const optionColors = [
-    'from-blue-500/20 to-blue-600/20 border-blue-500/30 hover:border-blue-400',
-    'from-emerald-500/20 to-emerald-600/20 border-emerald-500/30 hover:border-emerald-400',
-    'from-amber-500/20 to-amber-600/20 border-amber-500/30 hover:border-amber-400',
-    'from-purple-500/20 to-purple-600/20 border-purple-500/30 hover:border-purple-400',
+    { bg: 'from-cyan-500/10 to-cyan-600/10', border: 'border-cyan-500/30 hover:border-cyan-400', label: 'bg-cyan-500/20 text-cyan-400' },
+    { bg: 'from-green-500/10 to-green-600/10', border: 'border-green-500/30 hover:border-green-400', label: 'bg-green-500/20 text-green-400' },
+    { bg: 'from-amber-500/10 to-amber-600/10', border: 'border-amber-500/30 hover:border-amber-400', label: 'bg-amber-500/20 text-amber-400' },
+    { bg: 'from-pink-500/10 to-pink-600/10', border: 'border-pink-500/30 hover:border-pink-400', label: 'bg-pink-500/20 text-pink-400' },
   ];
 
+  const points = question.difficulty === 'easy' ? 100 : question.difficulty === 'medium' ? 200 : 300;
+
   return (
-    <div className={`w-full max-w-3xl mx-auto transition-all duration-500 ${animateIn ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
+    <div className={`w-full max-w-3xl mx-auto transition-all duration-500 ${animateIn ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'}`}>
       {/* Question */}
-      <div className="bg-white/5 backdrop-blur-xl rounded-3xl p-6 md:p-8 mb-6 border border-white/10 shadow-2xl">
-        <div className="flex items-start gap-3 mb-2">
-          <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
-            question.difficulty === 'easy' ? 'bg-green-500/20 text-green-300' :
-            question.difficulty === 'medium' ? 'bg-amber-500/20 text-amber-300' :
-            'bg-red-500/20 text-red-300'
-          }`}>
-            {question.difficulty === 'easy' ? '+100' : question.difficulty === 'medium' ? '+200' : '+300'}
-          </span>
+      <div className="glow-panel rounded-2xl p-5 md:p-6 mb-5">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-white/40 text-sm font-medium">Question</span>
+          <span className={`text-xs px-2.5 py-1 rounded-md font-bold ${
+            question.difficulty === 'easy' ? 'bg-green-500/20 text-green-400' :
+            question.difficulty === 'medium' ? 'bg-amber-500/20 text-amber-400' :
+            'bg-pink-500/20 text-pink-400'
+          }`}>+{points} pts</span>
         </div>
         <h2 className="text-xl md:text-2xl font-bold text-white leading-relaxed">
           {question.question}
@@ -50,9 +51,9 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {question.options.map((option, idx) => {
           if (hiddenOptions.includes(idx)) return (
-            <div key={idx} className="p-4 rounded-2xl border border-white/5 bg-white/2 opacity-30">
+            <div key={idx} className="p-4 rounded-xl border border-white/5 bg-white/2 opacity-25">
               <div className="flex items-center gap-3">
-                <span className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-sm font-bold text-white/30">
+                <span className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center text-sm font-bold text-white/30">
                   {optionLabels[idx]}
                 </span>
                 <span className="text-white/30 line-through">{option}</span>
@@ -70,33 +71,29 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
               key={idx}
               onClick={() => !showAnswer && onAnswer(idx)}
               disabled={showAnswer}
-              className={`relative p-4 rounded-2xl border-2 transition-all duration-300 text-left group
-                ${showCorrect ? 'bg-emerald-500/30 border-emerald-400 scale-[1.02] shadow-lg shadow-emerald-500/20' :
-                  showWrong ? 'bg-red-500/30 border-red-400 scale-[0.98] shadow-lg shadow-red-500/20' :
-                  isSelected && !showAnswer ? 'bg-white/15 border-white/40 scale-[1.02]' :
-                  `bg-gradient-to-r ${optionColors[idx]} border cursor-pointer hover:scale-[1.02] hover:bg-white/10 active:scale-[0.98]`
+              className={`relative p-4 rounded-xl border-2 transition-all duration-200 text-left
+                ${showCorrect ? 'bg-green-500/20 border-green-400 scale-[1.02] shadow-lg shadow-green-500/20' :
+                  showWrong ? 'bg-red-500/20 border-red-400 scale-[0.98] shadow-lg shadow-red-500/20' :
+                  isSelected && !showAnswer ? 'bg-white/10 border-white/40 scale-[1.02]' :
+                  `bg-gradient-to-r ${optionColors[idx].bg} ${optionColors[idx].border} cursor-pointer hover:scale-[1.02] active:scale-[0.98]`
                 }
               `}
-              style={{ animationDelay: `${idx * 100}ms` }}
             >
               <div className="flex items-center gap-3">
-                <span className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold transition-all
-                  ${showCorrect ? 'bg-emerald-500 text-white' :
+                <span className={`w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold transition-all
+                  ${showCorrect ? 'bg-green-500 text-white' :
                     showWrong ? 'bg-red-500 text-white' :
-                    'bg-white/10 text-white group-hover:bg-white/20'
+                    optionColors[idx].label
                   }
                 `}>
                   {showCorrect ? '✓' : showWrong ? '✗' : optionLabels[idx]}
                 </span>
-                <span className={`font-medium text-base ${
-                  showCorrect ? 'text-emerald-200' : showWrong ? 'text-red-200' : 'text-white'
+                <span className={`font-semibold text-base ${
+                  showCorrect ? 'text-green-200' : showWrong ? 'text-red-200' : 'text-white'
                 }`}>
                   {option}
                 </span>
               </div>
-              {showCorrect && (
-                <div className="absolute -top-2 -right-2 text-2xl animate-bounce">✨</div>
-              )}
             </button>
           );
         })}
@@ -104,11 +101,11 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
 
       {/* Fun Fact */}
       {showAnswer && question.funFact && (
-        <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30 animate-fade-in">
+        <div className="mt-4 p-4 rounded-xl bg-purple-500/10 border border-purple-500/30 animate-fade-in">
           <div className="flex items-start gap-2">
             <span className="text-xl">💡</span>
             <div>
-              <p className="text-purple-200 text-sm font-medium">Le saviez-vous ?</p>
+              <p className="text-purple-300 text-sm font-bold">Le saviez-vous ?</p>
               <p className="text-white/80 text-sm mt-1">{question.funFact}</p>
             </div>
           </div>
