@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { questions, categories } from './data/questions';
-import { Player, LeaderboardEntry, AVATARS, ACHIEVEMENTS, GameState } from './types/game';
+import { Player, SavedPlayer, DEFAULT_PLAYERS, ACHIEVEMENTS, GameState } from './types/game';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useSound } from './hooks/useSound';
 import { useConfetti } from './hooks/useConfetti';
@@ -10,6 +10,7 @@ import { Lifelines } from './components/Lifelines';
 import { Leaderboard } from './components/Leaderboard';
 import { ResultsScreen } from './components/ResultsScreen';
 import { PauseModal } from './components/PauseModal';
+import { PlayerSelect } from './components/PlayerSelect';
 
 const DEFAULT_TIME = 20;
 const BLITZ_TIME = 90;
@@ -37,8 +38,17 @@ function createPlayer(name: string, avatar: string): Player {
 }
 
 export default function App() {
-  const [leaderboard, setLeaderboard] = useLocalStorage<LeaderboardEntry[]>('quiz_leaderboard', []);
-  const [allAchievements, setAllAchievements] = useLocalStorage<string[]>('quiz_achievements', []);
+  const [savedPlayers, setSavedPlayers] = useLocalStorage<SavedPlayer[]>('quiz_saved_players', DEFAULT_PLAYERS);
+  const [selectedPlayerId, setSelectedPlayerId] = useLocalStorage<string>('quiz_selected_player', '');
+
+  // Agrégation de tous les succès de tous les joueurs
+  const allAchievements = savedPlayers.flatMap(p => p.achievements);
+
+  // Le joueur actuellement sélectionné
+  const selectedSavedPlayer = savedPlayers.find(p => p.id === selectedPlayerId) || null;
+
+  // Le mode d'affichage initial (sélection joueur ou menu)
+  const [showMenu, setShowMenu] = useState<boolean>(!!selectedSavedPlayer);
 
   const [gameState, setGameState] = useState<GameState>({
     mode: 'menu',
@@ -61,8 +71,6 @@ export default function App() {
     blitzTimeTotal: BLITZ_TIME,
   });
 
-  const [playerName, setPlayerName] = useState('');
-  const [selectedAvatar, setSelectedAvatar] = useState('🧠');
   const [hiddenOptions, setHiddenOptions] = useState<number[]>([]);
   const [newAchievements, setNewAchievements] = useState<string[]>([]);
   const [showSetup, setShowSetup] = useState(false);
@@ -127,8 +135,8 @@ export default function App() {
     const total = mode === 'survie' ? filtered.length : Math.min(count, filtered.length);
     const questionIds = filtered.slice(0, total).map(q => q.id);
 
-    const name = playerName.trim() || 'Joueur';
-    const player = createPlayer(name, selectedAvatar);
+    if (!selectedSavedPlayer) return;
+    const player = createPlayer(selectedSavedPlayer.name, selectedSavedPlayer.avatar);
 
     setHiddenOptions([]);
     setNewAchievements([]);
@@ -155,7 +163,7 @@ export default function App() {
     });
     setShowSetup(false);
     playClick();
-  }, [playerName, selectedAvatar, playClick]);
+  }, [selectedSavedPlayer, playClick]);
 
   const handleAnswer = useCallback((index: number) => {
     if (gameState.showAnswer) return;
@@ -243,39 +251,59 @@ export default function App() {
     setGameState(prev => ({ ...prev, mode: 'results' as any, isTimerActive: false }));
   }, []);
 
-  // Check achievements when reaching results
+  // Check achievements and save best score when reaching results
   useEffect(() => {
-    if (gameState.mode === 'results') {
+    if (gameState.mode === 'results' && selectedPlayerId) {
       const p = gameState.currentPlayer;
-      const gained: string[] = [];
+      const accuracy = p.totalAnswered > 0 ? Math.round((p.totalCorrect / p.totalAnswered) * 100) : 0;
 
-      if (!allAchievements.includes('first_game')) gained.push('first_game');
-      if (p.maxStreak >= 10 && !allAchievements.includes('perfect_10')) gained.push('perfect_10');
-      if (p.maxStreak >= 20 && !allAchievements.includes('perfect_20')) gained.push('perfect_20');
-      if (p.score >= 1000 && !allAchievements.includes('score_1000')) gained.push('score_1000');
-      if (p.score >= 5000 && !allAchievements.includes('score_5000')) gained.push('score_5000');
+      // Check new achievements for this player
+      setSavedPlayers(prev => prev.map(sp => {
+        if (sp.id !== selectedPlayerId) return sp;
 
-      if (gained.length > 0) {
+        const newAchievements: string[] = [];
+        if (!sp.achievements.includes('first_game')) newAchievements.push('first_game');
+        if (p.maxStreak >= 10 && !sp.achievements.includes('perfect_10')) newAchievements.push('perfect_10');
+        if (p.maxStreak >= 20 && !sp.achievements.includes('perfect_20')) newAchievements.push('perfect_20');
+        if (p.score >= 1000 && !sp.achievements.includes('score_1000')) newAchievements.push('score_1000');
+        if (p.score >= 5000 && !sp.achievements.includes('score_5000')) newAchievements.push('score_5000');
+
+        // Si c'est le nouveau meilleur score, on met à jour
+        const isNewBest = p.score > sp.bestScore;
+
+        return {
+          ...sp,
+          bestScore: isNewBest ? p.score : sp.bestScore,
+          bestMode: isNewBest ? lastGameMode : sp.bestMode,
+          bestAccuracy: isNewBest ? accuracy : Math.max(sp.bestAccuracy, accuracy),
+          bestStreak: Math.max(sp.bestStreak, p.maxStreak),
+          totalGames: sp.totalGames + 1,
+          totalCorrect: sp.totalCorrect + p.totalCorrect,
+          totalAnswered: sp.totalAnswered + p.totalAnswered,
+          achievements: [...sp.achievements, ...newAchievements],
+          lastPlayed: Date.now(),
+        };
+      }));
+
+      // Affiche les nouveaux succès
+      const sp = savedPlayers.find(s => s.id === selectedPlayerId);
+      if (sp) {
+        const gained = ['first_game', 'perfect_10', 'perfect_20', 'score_1000', 'score_5000']
+          .filter(id => !sp.achievements.includes(id) &&
+            (id === 'first_game' ||
+             (id === 'perfect_10' && p.maxStreak >= 10) ||
+             (id === 'perfect_20' && p.maxStreak >= 20) ||
+             (id === 'score_1000' && p.score >= 1000) ||
+             (id === 'score_5000' && p.score >= 5000))
+          );
         setNewAchievements(gained);
-        setAllAchievements(prev => [...prev, ...gained]);
+      }
+
+      if (p.score > (selectedSavedPlayer?.bestScore || 0)) {
         playLevelUp();
       } else {
         playGameOver();
       }
-
-      // Save to leaderboard
-      const modeStr = lastGameMode;
-      const entry: LeaderboardEntry = {
-        name: p.name,
-        avatar: p.avatar,
-        score: p.score,
-        totalCorrect: p.totalCorrect,
-        totalAnswered: p.totalAnswered,
-        streak: p.maxStreak,
-        date: new Date().toISOString(),
-        mode: modeStr,
-      };
-      setLeaderboard(prev => [...prev, entry].sort((a, b) => b.score - a.score).slice(0, 50));
     }
   }, [gameState.mode]);
 
@@ -342,6 +370,14 @@ export default function App() {
     setGameState(prev => ({ ...prev, mode: 'menu', isTimerActive: false }));
     setShowSetup(false);
     setShowAchievements(false);
+    setShowMenu(true);
+  }, []);
+
+  const goToPlayerSelect = useCallback(() => {
+    setGameState(prev => ({ ...prev, mode: 'menu', isTimerActive: false }));
+    setShowSetup(false);
+    setShowAchievements(false);
+    setShowMenu(false);
   }, []);
 
   // Current question data
@@ -447,9 +483,14 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/50 to-gray-900">
         <Leaderboard
-          entries={leaderboard}
+          players={savedPlayers}
           onBack={goToMenu}
-          onClear={() => { setLeaderboard([]); playClick(); }}
+          onReset={() => {
+            if (confirm('Réinitialiser tous les scores et succès des 3 joueurs ?')) {
+              setSavedPlayers(DEFAULT_PLAYERS);
+              playClick();
+            }
+          }}
         />
       </div>
     );
@@ -501,36 +542,22 @@ export default function App() {
       <div className="bg-gray-900/95 rounded-3xl p-6 border border-white/10 shadow-2xl max-h-[90vh] overflow-y-auto">
         <h2 className="text-2xl font-bold text-white mb-6 text-center">⚙️ Configuration</h2>
 
-        {/* Player setup */}
-        <div className="mb-6">
-          <label className="text-white/60 text-sm mb-2 block">Votre pseudo</label>
-          <input
-            type="text"
-            value={playerName}
-            onChange={e => setPlayerName(e.target.value)}
-            placeholder="Entrez votre pseudo..."
-            className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/30 focus:outline-none focus:border-purple-500 transition-all"
-            maxLength={20}
-          />
-        </div>
-
-        {/* Avatar selection */}
-        <div className="mb-6">
-          <label className="text-white/60 text-sm mb-2 block">Votre avatar</label>
-          <div className="flex flex-wrap gap-2">
-            {AVATARS.map(a => (
-              <button
-                key={a}
-                onClick={() => setSelectedAvatar(a)}
-                className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl transition-all ${
-                  selectedAvatar === a ? 'bg-purple-500/30 border-2 border-purple-400 scale-110' : 'bg-white/5 border border-white/10 hover:bg-white/10'
-                }`}
-              >
-                {a}
-              </button>
-            ))}
+        {/* Current player info */}
+        {selectedSavedPlayer && (
+          <div className={`mb-6 p-4 rounded-2xl bg-gradient-to-r ${selectedSavedPlayer.color} bg-opacity-20 border border-white/20 flex items-center gap-3`}>
+            <div className="text-4xl">{selectedSavedPlayer.avatar}</div>
+            <div className="flex-1">
+              <div className="text-white font-bold text-lg">{selectedSavedPlayer.name}</div>
+              <div className="text-white/60 text-xs">Meilleur score : {selectedSavedPlayer.bestScore.toLocaleString()} pts</div>
+            </div>
+            <button
+              onClick={() => { setShowSetup(false); goToPlayerSelect(); }}
+              className="text-xs px-3 py-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-all"
+            >
+              Changer
+            </button>
           </div>
-        </div>
+        )}
 
         {/* Mode */}
         <div className="mb-6">
@@ -643,6 +670,22 @@ export default function App() {
     );
   }
 
+  // ============ PLAYER SELECTION ============
+  if (!showMenu) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/50 to-gray-900">
+        <PlayerSelect
+          players={savedPlayers}
+          onSelect={(player) => {
+            setSelectedPlayerId(player.id);
+            setShowMenu(true);
+            playClick();
+          }}
+        />
+      </div>
+    );
+  }
+
   // ============ MENU ============
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/50 to-gray-900 relative overflow-hidden">
@@ -663,6 +706,23 @@ export default function App() {
           <p className="text-white/40 text-lg">500 questions • 10 catégories • 3 modes de jeu</p>
         </div>
 
+        {/* Current player indicator */}
+        {selectedSavedPlayer && (
+          <button
+            onClick={() => setShowMenu(false)}
+            className={`mb-8 flex items-center gap-3 px-5 py-3 rounded-2xl bg-gradient-to-r ${selectedSavedPlayer.color} bg-opacity-20 border border-white/20 hover:scale-105 transition-all active:scale-95`}
+          >
+            <div className="text-3xl">{selectedSavedPlayer.avatar}</div>
+            <div className="text-left">
+              <div className="text-white font-bold">{selectedSavedPlayer.name}</div>
+              <div className="text-white/60 text-xs">⭐ {selectedSavedPlayer.bestScore.toLocaleString()} pts</div>
+            </div>
+            <svg className="w-4 h-4 text-white/40 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
+            </svg>
+          </button>
+        )}
+
         {/* Quick stats */}
         <div className="flex gap-4 mb-10">
           <div className="text-center">
@@ -676,7 +736,7 @@ export default function App() {
           </div>
           <div className="w-px bg-white/10" />
           <div className="text-center">
-            <div className="text-2xl font-bold text-white">{leaderboard.length}</div>
+            <div className="text-2xl font-bold text-white">{savedPlayers.reduce((sum, p) => sum + p.totalGames, 0)}</div>
             <div className="text-xs text-white/40">Parties</div>
           </div>
         </div>
