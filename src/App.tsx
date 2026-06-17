@@ -531,8 +531,6 @@ export default function App() {
 
     return (
       <div className="glow-panel rounded-2xl p-6 max-h-[90vh] overflow-y-auto">
-        <h2 className="font-title text-2xl text-white text-center mb-6">⚙️ Configuration</h2>
-
         {/* Mode */}
         <div className="mb-5">
           <label className="text-white/50 text-sm font-semibold mb-2 block">Mode de jeu</label>
@@ -616,7 +614,7 @@ export default function App() {
             <input
               type="range"
               min={5}
-              max={Math.min(50, availableCount)}
+              max={availableCount}
               value={questionsCount}
               onChange={e => setQuestionsCount(Number(e.target.value))}
               className="w-full"

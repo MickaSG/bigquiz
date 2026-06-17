@@ -160,7 +160,7 @@ export const PlayerSelect: React.FC<PlayerSelectProps> = ({ onSelect, onLeaderbo
 
         {/* Footer */}
         <div className="mt-6 text-center">
-          <p className="text-white/20 text-sm">500 questions · 10 catégories · 3 modes</p>
+          <p className="text-white/20 text-sm">520 questions · 8 catégories · 3 modes</p>
         </div>
       </div>
     </div>
