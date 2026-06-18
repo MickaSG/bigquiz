@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Player, ACHIEVEMENTS } from '../types/game';
+import { Player } from '../types/game';
 import { useConfetti } from '../hooks/useConfetti';
 
 interface ResultsScreenProps {
@@ -10,7 +10,7 @@ interface ResultsScreenProps {
   newAchievements: string[];
 }
 
-export const ResultsScreen: React.FC<ResultsScreenProps> = ({ player, mode, onPlayAgain, onMenu, newAchievements }) => {
+export const ResultsScreen: React.FC<ResultsScreenProps> = ({ player, mode, onPlayAgain, onMenu }) => {
   const { fire, fireStars, fireSides } = useConfetti();
   const accuracy = player.totalAnswered > 0 ? Math.round((player.totalCorrect / player.totalAnswered) * 100) : 0;
 
@@ -41,7 +41,6 @@ export const ResultsScreen: React.FC<ResultsScreenProps> = ({ player, mode, onPl
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative z-10">
       <div className="max-w-lg w-full">
-        {/* Grade card */}
         <div className="glow-panel rounded-2xl p-6 mb-5 text-center animate-bounce-in">
           <div className="text-7xl mb-2">{grade.emoji}</div>
           <h1 className={`font-title text-3xl bg-gradient-to-r ${grade.gradient} bg-clip-text text-transparent mb-3`}>
@@ -57,7 +56,6 @@ export const ResultsScreen: React.FC<ResultsScreenProps> = ({ player, mode, onPl
           </div>
         </div>
 
-        {/* Stats grid */}
         <div className="grid grid-cols-3 gap-2 mb-5">
           {stats.map((stat, i) => (
             <div key={i} className="glass-panel rounded-xl p-3 text-center">
@@ -68,43 +66,17 @@ export const ResultsScreen: React.FC<ResultsScreenProps> = ({ player, mode, onPl
           ))}
         </div>
 
-        {/* Accuracy bar */}
         <div className="glass-panel rounded-xl p-3 mb-5">
           <div className="flex items-center justify-between mb-2">
             <span className="text-white/50 text-sm">Précision</span>
             <span className="text-white font-bold font-score">{accuracy}%</span>
           </div>
           <div className="progress-bar h-3 rounded-full">
-            <div
-              className={`h-full rounded-full bg-gradient-to-r ${grade.gradient} transition-all duration-1000`}
-              style={{ width: `${accuracy}%` }}
-            />
+            <div className={`h-full rounded-full bg-gradient-to-r ${grade.gradient} transition-all duration-1000`}
+              style={{ width: `${accuracy}%` }} />
           </div>
         </div>
 
-        {/* Achievements */}
-        {newAchievements.length > 0 && (
-          <div className="mb-5">
-            <h3 className="text-amber-400 text-sm font-bold mb-3 text-center">🎉 Succès débloqués !</h3>
-            <div className="space-y-2">
-              {newAchievements.map(id => {
-                const ach = ACHIEVEMENTS.find(a => a.id === id);
-                if (!ach) return null;
-                return (
-                  <div key={id} className="flex items-center gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 animate-pulse-glow">
-                    <span className="text-2xl">{ach.icon}</span>
-                    <div>
-                      <div className="text-white font-bold text-sm">{ach.name}</div>
-                      <div className="text-white/50 text-xs">{ach.desc}</div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Actions */}
         <div className="flex gap-3">
           <button onClick={onMenu} className="btn-secondary flex-1 py-4 rounded-xl text-sm">🏠 Menu</button>
           <button onClick={onPlayAgain} className="btn-primary flex-1 py-4 rounded-xl text-sm">🔄 Rejouer</button>

@@ -5,7 +5,8 @@ import { LeaderboardEntry } from '../types/game';
 interface PlayerSelectProps {
   onSelect: (idx: number) => void;
   onLeaderboard: () => void;
-  onAchievements: () => void;
+  gameType: 'quiz' | 'pendu';
+  onToggleGameType: () => void;
 }
 
 const PLAYERS = [
@@ -38,7 +39,7 @@ const PLAYERS = [
   },
 ];
 
-export const PlayerSelect: React.FC<PlayerSelectProps> = ({ onSelect, onLeaderboard, onAchievements }) => {
+export const PlayerSelect: React.FC<PlayerSelectProps> = ({ onSelect, onLeaderboard, gameType, onToggleGameType }) => {
   const [leaderboard] = useLocalStorage<LeaderboardEntry[]>('quiz_leaderboard', []);
 
   const getPlayerBestScore = (name: string) => {
@@ -59,13 +60,28 @@ export const PlayerSelect: React.FC<PlayerSelectProps> = ({ onSelect, onLeaderbo
       </div>
 
       <div className="relative z-10 min-h-screen flex flex-col items-center justify-center p-4 md:p-6">
-        {/* HEADER */}
+        {/* HEADER - CLICKABLE TOGGLE */}
         <div className="text-center mb-8">
-          <div className="text-5xl mb-3">🕹️</div>
-          <h1 className="font-title text-4xl md:text-5xl text-white mb-1 tracking-wide">
-            QUIZ<span className="text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-amber-400">MASTER</span>
-          </h1>
-          <p className="text-white/40 text-lg font-medium">Choisis ton joueur</p>
+          <div className="text-5xl mb-3">{gameType === 'quiz' ? '🕹️' : '☠️'}</div>
+          <button
+            onClick={onToggleGameType}
+            className="group cursor-pointer transition-all hover:scale-105 active:scale-95"
+            title="Cliquer pour changer de jeu !"
+          >
+            {gameType === 'quiz' ? (
+              <h1 className="font-title text-4xl md:text-5xl text-white mb-1 tracking-wide">
+                QUIZ<span className="text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-amber-400">MASTER</span>
+              </h1>
+            ) : (
+              <h1 className="font-title text-4xl md:text-5xl text-white mb-1 tracking-wide">
+                LE <span className="text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-orange-400">PENDU</span>
+              </h1>
+            )}
+            <p className="text-white/30 text-xs mt-1 group-hover:text-white/50 transition-all">
+              ← cliquer pour passer au {gameType === 'quiz' ? 'Pendu ☠️' : 'Quiz 🕹️'} →
+            </p>
+          </button>
+          <p className="text-white/40 text-lg font-medium mt-2">Choisis ton joueur</p>
         </div>
 
         {/* FIFA CARDS */}
@@ -148,19 +164,16 @@ export const PlayerSelect: React.FC<PlayerSelectProps> = ({ onSelect, onLeaderbo
           })}
         </div>
 
-        {/* Bottom buttons */}
+        {/* Bottom button */}
         <div className="flex gap-3 w-full max-w-md">
           <button onClick={onLeaderboard} className="btn-secondary flex-1 py-3 rounded-xl text-sm flex items-center justify-center gap-2">
             🏆 Classement
-          </button>
-          <button onClick={onAchievements} className="btn-secondary flex-1 py-3 rounded-xl text-sm flex items-center justify-center gap-2">
-            🏅 Succès
           </button>
         </div>
 
         {/* Footer */}
         <div className="mt-6 text-center">
-          <p className="text-white/20 text-sm">520 questions · 8 catégories · 3 modes</p>
+          <p className="text-white/20 text-sm">750+ questions · 8 catégories · 3 modes</p>
         </div>
       </div>
     </div>

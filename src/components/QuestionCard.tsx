@@ -7,10 +7,12 @@ interface QuestionCardProps {
   showAnswer: boolean;
   onAnswer: (index: number) => void;
   hiddenOptions: number[];
+  spyReveal: number | null;
+  publicVoteData: number[] | null;
 }
 
 export const QuestionCard: React.FC<QuestionCardProps> = ({
-  question, selectedAnswer, showAnswer, onAnswer, hiddenOptions
+  question, selectedAnswer, showAnswer, onAnswer, hiddenOptions, spyReveal, publicVoteData
 }) => {
   const [animateIn, setAnimateIn] = useState(false);
 
@@ -65,6 +67,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
           const isCorrect = idx === question.correct;
           const showCorrect = showAnswer && isCorrect;
           const showWrong = showAnswer && isSelected && !isCorrect;
+          const isSpy = spyReveal === idx;
 
           return (
             <button
@@ -74,6 +77,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
               className={`relative p-4 rounded-xl border-2 transition-all duration-200 text-left
                 ${showCorrect ? 'bg-green-500/20 border-green-400 scale-[1.02] shadow-lg shadow-green-500/20' :
                   showWrong ? 'bg-red-500/20 border-red-400 scale-[0.98] shadow-lg shadow-red-500/20' :
+                  isSpy ? 'bg-yellow-500/30 border-yellow-400 scale-[1.03] shadow-lg shadow-yellow-500/30 animate-pulse' :
                   isSelected && !showAnswer ? 'bg-white/10 border-white/40 scale-[1.02]' :
                   `bg-gradient-to-r ${optionColors[idx].bg} ${optionColors[idx].border} cursor-pointer hover:scale-[1.02] active:scale-[0.98]`
                 }
@@ -83,17 +87,31 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
                 <span className={`w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold transition-all
                   ${showCorrect ? 'bg-green-500 text-white' :
                     showWrong ? 'bg-red-500 text-white' :
+                    isSpy ? 'bg-yellow-500 text-black' :
                     optionColors[idx].label
                   }
                 `}>
                   {showCorrect ? '✓' : showWrong ? '✗' : optionLabels[idx]}
                 </span>
-                <span className={`font-semibold text-base ${
-                  showCorrect ? 'text-green-200' : showWrong ? 'text-red-200' : 'text-white'
-                }`}>
-                  {option}
-                </span>
+                <div className="flex-1">
+                  <span className={`font-semibold text-base ${
+                    showCorrect ? 'text-green-200' : showWrong ? 'text-red-200' : isSpy ? 'text-yellow-200' : 'text-white'
+                  }`}>
+                    {option}
+                  </span>
+                  {/* Public vote bar */}
+                  {publicVoteData && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <div className="flex-1 h-2 bg-black/30 rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-pink-500 to-amber-400 rounded-full transition-all duration-500"
+                          style={{ width: `${publicVoteData[idx]}%` }} />
+                      </div>
+                      <span className="text-xs text-white/60 font-bold w-8 text-right">{publicVoteData[idx]}%</span>
+                    </div>
+                  )}
+                </div>
               </div>
+              {isSpy && <div className="absolute -top-2 -right-2 text-xl">👁️</div>}
             </button>
           );
         })}
