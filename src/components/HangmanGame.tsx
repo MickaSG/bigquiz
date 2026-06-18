@@ -150,8 +150,8 @@ export const HangmanGame: React.FC<HangmanProps> = ({ playerName, playerAvatar, 
         setWordResult('win');
         if (newStreak >= 3) { fire(); playSoundStreak(newStreak); }
         if (newStreak >= 5) fireStars();
-        // 🎁 Recharge : +1 power-up aléatoire tous les 3 streak
-        if (newStreak > 0 && newStreak % 3 === 0) {
+        // 🎁 Recharge : +1 power-up aléatoire tous les 2 mots trouvés
+        if (newStreak > 0 && newStreak % 2 === 0) {
           const options = [
             () => setPwVowels(p => p + 1),
             () => setPwFreeLetter(p => p + 1),

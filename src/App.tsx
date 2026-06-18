@@ -12,6 +12,9 @@ import { PauseModal } from './components/PauseModal';
 import { PlayerSelect } from './components/PlayerSelect';
 import { HangmanGame } from './components/HangmanGame';
 import { FortuneWheel } from './components/FortuneWheel';
+import { Shop } from './components/Shop';
+import { RadarChart } from './components/RadarChart';
+import { RankUpModal } from './components/RankUpModal';
 
 const DEFAULT_TIME = 20;
 const BLITZ_TIME = 90;
@@ -70,6 +73,8 @@ export default function App() {
   const [showFortuneWheel, setShowFortuneWheel] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
   const [dashboardPlayerIdx, setDashboardPlayerIdx] = useState(0);
+  const [showShop, setShowShop] = useState(false);
+  const [rankUpData, setRankUpData] = useState<{ name: string; icon: string; color: string } | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { playCorrect, playWrong, playClick, playTick, playStreak, playGameOver } = useSound();
@@ -107,7 +112,7 @@ export default function App() {
 
   const startGame = useCallback((mode: 'classique' | 'survie' | 'blitz' | 'random', cats: string[], diff: 'all' | 'easy' | 'medium' | 'hard', count: number) => {
     const filtered = shuffleArray(getFilteredQuestions(cats, diff, mode === 'random'));
-    const total = (mode === 'survie' || mode === 'random') ? Math.min(count, filtered.length) : Math.min(count, filtered.length);
+    const total = Math.min(count, filtered.length);
     const questionIds = filtered.slice(0, total).map(q => q.id);
     const player = createPlayer(profiles[selectedPlayerIdx]);
     setHiddenOptions([]); setSpyReveal(null); setPublicVoteData(null);
@@ -217,7 +222,14 @@ export default function App() {
           quizCategoryStats: catStats,
         };
       }));
-      setTimeout(() => setShowFortuneWheel(true), 500);
+      // Check rank up
+      const oldProfile = profiles[selectedPlayerIdx];
+      const oldRank = getRank(oldProfile.quizTotalScore);
+      const newRank = getRank(oldProfile.quizTotalScore + p.score);
+      if (newRank.name !== oldRank.name) {
+        setTimeout(() => setRankUpData({ name: newRank.name, icon: newRank.icon, color: newRank.color }), 300);
+      }
+      setTimeout(() => setShowFortuneWheel(true), rankUpData ? 2000 : 500);
     }
   }, [gameState.mode]);
 
@@ -233,6 +245,13 @@ export default function App() {
     }
   }, [selectedPlayerIdx, setProfiles]);
 
+  const handleShopBuy = useCallback((item: keyof PlayerLifelines, cost: number) => {
+    setProfiles(prev => prev.map((pr, i) => {
+      if (i !== dashboardPlayerIdx || pr.quizTotalScore < cost) return pr;
+      return { ...pr, quizTotalScore: pr.quizTotalScore - cost, lifelines: { ...pr.lifelines, [item]: pr.lifelines[item] + 1 } };
+    }));
+  }, [dashboardPlayerIdx, setProfiles]);
+
   // Hangman results callback
   const handleHangmanEnd = useCallback((score: number, wordsFound: number, bestStreak: number) => {
     setProfiles(prev => prev.map((pr, i) => {
@@ -245,8 +264,6 @@ export default function App() {
         penduBestStreak: Math.max(pr.penduBestStreak, bestStreak),
       };
     }));
-    // Show fortune wheel for pendu too
-    setTimeout(() => setShowFortuneWheel(true), 500);
   }, [selectedPlayerIdx, setProfiles]);
 
   // Lifelines
@@ -284,7 +301,8 @@ export default function App() {
     return (
       <div className="min-h-screen bg-main relative">
         <ResultsScreen player={gameState.currentPlayer} mode={lastGameMode} onPlayAgain={() => setShowSetup(true)} onMenu={goToMenu} newAchievements={[]} />
-        {showFortuneWheel && <FortuneWheel onClose={handleFortuneWheelClose} />}
+        {rankUpData && <RankUpModal rankName={rankUpData.name} rankIcon={rankUpData.icon} rankColor={rankUpData.color} onClose={() => setRankUpData(null)} />}
+        {showFortuneWheel && !rankUpData && <FortuneWheel onClose={handleFortuneWheelClose} />}
         {showSetup && <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowSetup(false)}><div onClick={e => e.stopPropagation()} className="w-full max-w-lg">{renderSetupPanel()}</div></div>}
       </div>
     );
@@ -351,10 +369,13 @@ export default function App() {
               <div key={i} className="glass-panel rounded-xl p-3 text-center"><div className="text-xl">{s.icon}</div><div className="text-white font-bold text-sm">{s.val}</div><div className="text-white/40 text-[10px]">{s.label}</div></div>
             ))}
           </div>
-          {/* Power-ups (quiz only) */}
+          {/* Power-ups + Shop (quiz only) */}
           {isQuiz && (
             <div className="glow-panel rounded-xl p-4 mb-4">
-              <h3 className="text-white/50 text-sm font-semibold mb-3">🎒 Power-ups</h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-white/50 text-sm font-semibold">🎒 Power-ups</h3>
+                <button onClick={() => setShowShop(true)} className="text-xs text-amber-400 hover:text-amber-300 font-bold transition-all">🏪 Boutique</button>
+              </div>
               <div className="grid grid-cols-4 gap-2">
                 {[
                   { icon: '✂️', l: '50/50', c: profile.lifelines.fiftyFifty },
@@ -371,6 +392,13 @@ export default function App() {
               </div>
             </div>
           )}
+          {/* Radar chart (quiz only) */}
+          {isQuiz && catEntries.length >= 3 && (
+            <div className="glow-panel rounded-xl p-4 mb-4">
+              <h3 className="text-white/50 text-sm font-semibold mb-3">🕸️ Radar de compétences</h3>
+              <RadarChart data={catEntries.map(c => ({ label: c.name.replace(/^[^\s]+\s/, '').slice(0, 8), value: c.pct }))} />
+            </div>
+          )}
           {/* Category stats (quiz only) */}
           {isQuiz && catEntries.length > 0 && (
             <div className="glow-panel rounded-xl p-4">
@@ -382,6 +410,8 @@ export default function App() {
               </div>
             </div>
           )}
+          {/* Shop modal */}
+          {showShop && <Shop profile={profile} onBuy={handleShopBuy} onClose={() => setShowShop(false)} />}
         </div>
       </div>
     );
@@ -439,11 +469,6 @@ export default function App() {
       onMenu={() => { setPlayingHangman(false); setHangmanLeaderboardOnly(false); }}
       onGameEnd={handleHangmanEnd}
       showLeaderboardOnly={hangmanLeaderboardOnly} mode={hangmanMode} categoryFilter={hangmanCategory} />;
-  }
-
-  // Fortune wheel for pendu (when returning)
-  if (showFortuneWheel) {
-    return <div className="min-h-screen bg-main"><FortuneWheel onClose={handleFortuneWheelClose} /></div>;
   }
 
   // ============ MAIN ============

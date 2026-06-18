@@ -46,11 +46,19 @@ export const PlayerSelect: React.FC<PlayerSelectProps> = ({ profiles, onSelect, 
             const accuracy = isQuiz
               ? (p.quizTotalAnswered > 0 ? Math.round((p.quizTotalCorrect / p.quizTotalAnswered) * 100) : 0)
               : 0; // pendu doesn't have accuracy per se
-            const cardTypes = ['card-gold', 'card-silver', 'card-bronze'];
+            const getCardClass = (s: number) => {
+              const r = getRank(s);
+              if (r.name === 'Légende') return 'card-legend';
+              if (r.name === 'Diamant') return 'card-diamond';
+              if (r.name === 'Or') return 'card-gold';
+              if (r.name === 'Argent') return 'card-silver';
+              return 'card-bronze';
+            };
+            const cardClass = getCardClass(score);
             return (
               <div key={p.name} className="w-[220px] md:w-[240px]">
                 <button onClick={() => { if (!isQuiz) setPenduSetup(idx); else onSelect(idx); }}
-                  className={`${cardTypes[idx]} w-full rounded-2xl p-1 transition-all duration-300 hover:scale-105 hover:z-10 active:scale-95 cursor-pointer group`}>
+                  className={`${cardClass} w-full rounded-2xl p-1 transition-all duration-300 hover:scale-105 hover:z-10 active:scale-95 cursor-pointer group`}>
                   <div className="relative rounded-xl overflow-hidden">
                     <div className="absolute top-3 left-3 z-10">
                       <div className="flex items-center gap-1"><span>{rank.icon}</span><span className="font-title text-xs text-white/80">{rank.name}</span></div>
@@ -58,7 +66,7 @@ export const PlayerSelect: React.FC<PlayerSelectProps> = ({ profiles, onSelect, 
                     <div className="flex items-center justify-center py-6 pb-3">
                       <div className="text-7xl md:text-8xl drop-shadow-2xl group-hover:scale-110 transition-transform">{p.avatar}</div>
                     </div>
-                    <div className={`text-center py-2 ${idx === 0 ? 'bg-gradient-to-r from-yellow-700/80 via-yellow-500/80 to-yellow-700/80' : idx === 1 ? 'bg-gradient-to-r from-gray-600/80 via-gray-400/80 to-gray-600/80' : 'bg-gradient-to-r from-amber-800/80 via-amber-600/80 to-amber-800/80'}`}>
+                    <div className="text-center py-2 bg-black/40">
                       <div className="font-title text-lg text-white tracking-widest">{p.name.toUpperCase()}</div>
                     </div>
                     <div className="px-3 py-2 space-y-1">
@@ -78,7 +86,7 @@ export const PlayerSelect: React.FC<PlayerSelectProps> = ({ profiles, onSelect, 
           })}
         </div>
 
-        <div className="mt-2 text-center"><p className="text-white/20 text-sm">800+ questions · 8 catégories · 4 modes</p></div>
+        <div className="mt-2 text-center"><p className="text-white/20 text-sm">950+ questions · 9 catégories · 4 modes</p></div>
       </div>
 
       {/* Pendu setup */}

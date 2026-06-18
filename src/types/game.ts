@@ -33,11 +33,11 @@ export interface PlayerProfile {
 }
 
 export function getRank(score: number): { name: string; icon: string; color: string; next: number } {
-  if (score >= 50000) return { name: 'Légende', icon: '👑', color: 'from-yellow-400 to-amber-500', next: 999999 };
-  if (score >= 15000) return { name: 'Diamant', icon: '💎', color: 'from-cyan-400 to-blue-500', next: 50000 };
-  if (score >= 5000) return { name: 'Or', icon: '🥇', color: 'from-yellow-500 to-amber-600', next: 15000 };
-  if (score >= 1000) return { name: 'Argent', icon: '🥈', color: 'from-gray-300 to-gray-400', next: 5000 };
-  return { name: 'Bronze', icon: '🥉', color: 'from-amber-600 to-orange-700', next: 1000 };
+  if (score >= 85000) return { name: 'Légende', icon: '👑', color: 'from-yellow-400 to-amber-500', next: 999999 };
+  if (score >= 25000) return { name: 'Diamant', icon: '💎', color: 'from-cyan-400 to-blue-500', next: 85000 };
+  if (score >= 8500) return { name: 'Or', icon: '🥇', color: 'from-yellow-500 to-amber-600', next: 25000 };
+  if (score >= 2500) return { name: 'Argent', icon: '🥈', color: 'from-gray-300 to-gray-400', next: 8500 };
+  return { name: 'Bronze', icon: '🥉', color: 'from-amber-600 to-orange-700', next: 2500 };
 }
 
 export interface Player {
