@@ -8,7 +8,10 @@ interface HangmanProps {
   playerName: string;
   playerAvatar: string;
   onMenu: () => void;
+  onGameEnd?: (score: number, wordsFound: number, bestStreak: number) => void;
   showLeaderboardOnly?: boolean;
+  mode?: 'normal' | 'chrono' | 'mystery';
+  categoryFilter?: string | null;
 }
 
 interface HangmanLeaderEntry {
@@ -53,7 +56,7 @@ function HangmanSVG({ errors }: { errors: number }) {
   );
 }
 
-export const HangmanGame: React.FC<HangmanProps> = ({ playerName, playerAvatar, onMenu, showLeaderboardOnly = false }) => {
+export const HangmanGame: React.FC<HangmanProps> = ({ playerName, playerAvatar, onMenu, onGameEnd, showLeaderboardOnly = false, mode = 'normal', categoryFilter = null }) => {
   const [leaderboard, setLeaderboard] = useLocalStorage<HangmanLeaderEntry[]>('pendu_leaderboard', []);
   const [showLeaderboard, setShowLeaderboard] = useState(showLeaderboardOnly);
 
@@ -83,14 +86,38 @@ export const HangmanGame: React.FC<HangmanProps> = ({ playerName, playerAvatar, 
   const { playCorrect, playWrong, playClick, playStreak: playSoundStreak, playLevelUp, playGameOver: playSoundGameOver } = useSound();
   const { fire, fireStars } = useConfetti();
 
+  const [chronoTime, setChronoTime] = useState(120);
+  const [chronoActive, setChronoActive] = useState(false);
+  const isMystery = mode === 'mystery';
+  const isChrono = mode === 'chrono';
+
+  // Chrono timer
+  useEffect(() => {
+    if (!isChrono || !chronoActive || gameOver) return;
+    const t = setInterval(() => {
+      setChronoTime(prev => {
+        if (prev <= 1) { setChronoActive(false); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [isChrono, chronoActive, gameOver]);
+
+  // End when chrono runs out
+  useEffect(() => {
+    if (isChrono && chronoTime <= 0 && !gameOver) { endRun(); }
+  }, [chronoTime, isChrono, gameOver]);
+
   useEffect(() => { startNewGame(); }, []);
 
   const startNewGame = useCallback(() => {
-    const shuffled = shuffleArray(words);
+    const filtered = categoryFilter ? words.filter(w => w.category === categoryFilter) : words;
+    const shuffled = shuffleArray(filtered.length > 0 ? filtered : words);
     setWordQueue(shuffled); setCurrentWord(shuffled[0]);
     setGuessedLetters(new Set()); setErrors(0); setMaxErrors(MAX_ERRORS);
     setScore(0); setWordsFound(0); setStreak(0); setBestStreak(0);
     setGameOver(false); setWordResult(null); setShowHint(false); setHintUsed(false); setTotalErrors(0);
+    if (isChrono) { setChronoTime(120); setChronoActive(true); }
     setPwVowels(1); setPwFreeLetter(2); setPwEliminate(1); setPwExtraLife(1); setPwSkipWord(1);
     setEliminatedLetters(new Set());
   }, []);
@@ -116,7 +143,8 @@ export const HangmanGame: React.FC<HangmanProps> = ({ playerName, playerAvatar, 
         const bonus = Math.max(0, (maxErrors - errors) * 50);
         const hintPenalty = hintUsed ? -30 : 0;
         const streakBonus = streak * 20;
-        const points = 100 + bonus + streakBonus + hintPenalty;
+        const mysteryMultiplier = isMystery ? 3 : 1;
+        const points = (100 + bonus + streakBonus + hintPenalty) * mysteryMultiplier;
         setScore(s => s + points); setWordsFound(w => w + 1);
         const newStreak = streak + 1; setStreak(newStreak); setBestStreak(b => Math.max(b, newStreak));
         setWordResult('win');
@@ -138,7 +166,10 @@ export const HangmanGame: React.FC<HangmanProps> = ({ playerName, playerAvatar, 
     } else {
       playWrong();
       const newErrors = errors + 1; setErrors(newErrors); setTotalErrors(t => t + 1);
-      if (newErrors >= maxErrors) { setWordResult('lose'); setStreak(0); playSoundGameOver(); }
+      if (newErrors >= maxErrors) {
+        if (isChrono) { setStreak(0); setWordResult('lose'); setTimeout(() => nextWord(), 1500); }
+        else { setWordResult('lose'); setStreak(0); playSoundGameOver(); }
+      }
     }
   }, [currentWord, guessedLetters, errors, maxErrors, wordResult, streak, hintUsed, eliminatedLetters, playCorrect, playWrong, playLevelUp, playSoundGameOver, playSoundStreak, fire, fireStars]);
 
@@ -212,6 +243,7 @@ export const HangmanGame: React.FC<HangmanProps> = ({ playerName, playerAvatar, 
 
   const endRun = useCallback(() => {
     setGameOver(true);
+    if (onGameEnd) onGameEnd(score, wordsFound, bestStreak);
     const entry: HangmanLeaderEntry = { name: playerName, avatar: playerAvatar, score, wordsFound, bestStreak, date: new Date().toISOString() };
     setLeaderboard(prev => {
       const idx = prev.findIndex(e => e.name === entry.name);
@@ -314,8 +346,13 @@ export const HangmanGame: React.FC<HangmanProps> = ({ playerName, playerAvatar, 
 
         {/* Info */}
         <div className="glow-panel rounded-xl p-3 mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm"><span>{cat?.icon}</span><span className="text-white/60">{cat?.name}</span></div>
-          <div className="text-sm text-white/40">Mot #{wordsFound + 1}</div>
+          <div className="flex items-center gap-2 text-sm">
+            {isMystery ? <><span>❓</span><span className="text-purple-300">Mystère (x3)</span></> : <><span>{cat?.icon}</span><span className="text-white/60">{cat?.name}</span></>}
+          </div>
+          <div className="flex items-center gap-3">
+            {isChrono && <span className={`font-score text-sm font-bold ${chronoTime <= 10 ? 'text-red-400 animate-pulse' : 'text-amber-400'}`}>⏱️ {chronoTime}s</span>}
+            <span className="text-sm text-white/40">Mot #{wordsFound + 1}</span>
+          </div>
           <div className="flex items-center gap-1">
             {Array.from({ length: maxErrors }).map((_, i) => (
               <div key={i} className={`w-2.5 h-2.5 rounded-full transition-all ${i < errors ? 'bg-red-500 shadow-[0_0_5px_#ff3366]' : 'bg-white/20'}`} />
@@ -343,11 +380,13 @@ export const HangmanGame: React.FC<HangmanProps> = ({ playerName, playerAvatar, 
           })}
         </div>
 
-        {/* Hint */}
-        <div className="text-center mb-3">
-          {showHint ? <p className="text-purple-300 text-sm glass-panel inline-block px-4 py-2 rounded-lg">💡 {currentWord.hint}</p>
-          : !wordResult && <button onClick={() => { setShowHint(true); setHintUsed(true); playClick(); }} className="text-white/30 text-sm hover:text-white/50 transition-all">💡 Indice (-30 pts)</button>}
-        </div>
+        {/* Hint (hidden in mystery mode) */}
+        {!isMystery && (
+          <div className="text-center mb-3">
+            {showHint ? <p className="text-purple-300 text-sm glass-panel inline-block px-4 py-2 rounded-lg">💡 {currentWord.hint}</p>
+            : !wordResult && <button onClick={() => { setShowHint(true); setHintUsed(true); playClick(); }} className="text-white/30 text-sm hover:text-white/50 transition-all">💡 Indice (-30 pts)</button>}
+          </div>
+        )}
 
         {/* Power-ups */}
         {!wordResult && (
